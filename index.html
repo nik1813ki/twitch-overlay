@@ -309,12 +309,35 @@
   .tplbox { margin-bottom: 10px; }
   .tplbox .tplname { font-weight: 600; color: #b9c2d8; margin-bottom: 4px; }
   #urlOut { font-size: 11px; height: 60px; }
+
+  /* 啟用碼鎖：未啟用時畫面上只留一行提示 */
+  #lockNote { display: none; position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%);
+    background: rgba(12,14,22,.82); color: #fff; font-size: 15px; padding: 8px 16px; border-radius: 8px;
+    white-space: nowrap; font-family: 'Noto Sans TC', 'Microsoft JhengHei', sans-serif; }
+  body.locked #lockNote { display: block; }
+  body.locked #stage > :not(#lockNote):not(#demo-bg) { visibility: hidden !important; }
+  #licSec { display: none; }
+  #licSec.on { display: block; }
+  #licInfo.bad { color: #ff8a8a; }
+  #licInfo.good { color: #9be3a8; }
 </style>
 </head>
 <body class="with-panel">
 
 <div id="panel">
   <h1>Twitch 直播 Overlay<small>留言彈幕 × 事件通知 × 跑馬燈 × OBS</small></h1>
+
+  <details open id="licSec">
+    <summary>啟用</summary>
+    <div class="sec">
+      <div class="hint" id="licStep1">第一步：先用 Twitch 登入（要用你直播的帳號）。</div>
+      <div class="btnrow" id="licLoginRow"><button class="btn sm" id="btnLicLogin">用 Twitch 登入</button></div>
+      <div class="row"><label>啟用碼</label><input type="text" id="inLicCode" placeholder="XXXX-XXXX-XXXX" autocomplete="off" spellcheck="false"></div>
+      <div class="btnrow"><button class="btn sm" id="btnLicActivate">啟用</button></div>
+      <div class="hint" id="licInfo"></div>
+      <div class="hint">第一次啟用時，啟用碼會綁定你當下登入的 Twitch 帳號，之後只有這個帳號能用。</div>
+    </div>
+  </details>
 
   <details open>
     <summary>連線</summary>
@@ -547,6 +570,7 @@
   <div id="marquee"><div id="marqueeInner"></div></div>
   <div id="clock"></div>
   <div id="warnDot"></div>
+  <div id="lockNote"></div>
 </div>
 
 <script>
@@ -560,10 +584,17 @@ const Q = new URLSearchParams(location.search);
    該應用程式的「OAuth 重新導向網址」要填這一頁上線後的網址，例如 https://帳號.github.io/專案名稱/ */
 const TWITCH_CLIENT_ID = '5mk26gp5x6n4es2ilo6fwffwc0rup2';
 
+/* 啟用碼鎖：填上啟用碼伺服器（Cloudflare Worker）的網址就會上鎖，例如 https://overlay-license.帳號.workers.dev
+   留空＝不上鎖，任何人都能用。上鎖後買家要先用 Twitch 登入、再輸入你發的啟用碼，
+   第一次啟用時碼會綁定他當下登入的 Twitch 帳號。 */
+const LICENSE_API = '';
+const LIC_GRACE_DAYS = 7;   // 連不到伺服器或 Twitch 登入過期時，最近這幾天內驗證過就先放行
+
 /* ══ 設定 ═══════════════════════════════════════════════════ */
 const DEFAULTS = {
   channel: '', esToken: '', esClientId: '',
   esLogin: '', esExpires: 0,   // 用 Twitch 登入後記下的帳號與到期時間（毫秒）
+  licCode: '', licOkAt: 0,     // 啟用碼與最後一次驗證成功的時間（只有 LICENSE_API 有填才用到）
   mode: 'float',                                   // float / column / hscroll
 
   // 外觀
@@ -1385,9 +1416,12 @@ function setStatus(state, text) {
   if (dot) { dot.className = state; st.textContent = text; }
   paintWarn(state !== 'on');
 }
+// 紅點＝聊天室斷線 或 追隨（EventSub）壞掉，兩邊分開記，免得聊天室連上就把追隨的警示蓋掉
+let ircBad = false, esBad = false;
 function paintWarn(bad) {
+  if (bad !== undefined) ircBad = bad;
   const d = $('warnDot');
-  d.style.display = (!PANEL && +S.warnDot && bad) ? 'block' : 'none';
+  d.style.display = (!PANEL && +S.warnDot && (ircBad || esBad)) ? 'block' : 'none';
 }
 
 const unescapeTag = (v) => v.replace(/\\s/g, ' ').replace(/\\:/g, ';')
@@ -1529,38 +1563,117 @@ function disconnect(silent) {
 }
 
 /* ══ EventSub（追隨）════════════════════════════════════════ */
-let esWs = null, esWanted = false, esOk = false;
+let esWs = null, esPrev = null, esWanted = false, esOk = false;
+let esGen = 0, esLastRx = 0, esKeepSec = 10, esWatch = 0, esValTimer = 0;
+
+// 追隨狀態顯示在「追隨通知」區的登入資訊那行；bad=true 時面板收起後右上紅點也會亮
+function paintEs(msg, bad) {
+  esBad = !!bad;
+  paintAuth(msg || undefined);
+  paintWarn();
+}
 
 // 同樣要先拔 handler，否則舊 session 的 onclose 會再排一次重連，
 // 變成兩條 EventSub 都在收追隨事件、橫幅播兩次。
+function killEsSocket(w) {
+  if (!w) return;
+  w.onmessage = w.onclose = w.onerror = null;
+  try { w.close(); } catch (e) {}
+}
 function dropEs() {
-  if (!esWs) return;
-  esWs.onmessage = esWs.onclose = esWs.onerror = null;
-  try { esWs.close(); } catch (e) {}
-  esWs = null;
+  esGen++;                       // 作廢還在路上的 validate／重連
+  killEsSocket(esWs); killEsSocket(esPrev);
+  esWs = esPrev = null;
+  clearInterval(esWatch); clearInterval(esValTimer);
+}
+
+// 問 Twitch 這組授權還能不能用。回傳 false＝確定失效（已停止追隨連線）；
+// 網路問題查不到時當作可用，交給 WebSocket 自己重試。
+function validateEs() {
+  return fetch('https://id.twitch.tv/oauth2/validate', { headers: { 'Authorization': 'OAuth ' + S.esToken } })
+    .then(r => r.json().catch(() => ({})).then(j => {
+      if (r.status === 401) {
+        disconnectEventSub();
+        log('追隨授權已過期或失效，追隨通知已停止，請重新登入');
+        paintEs('✗ 授權已過期或失效，追隨通知不會跳。請按「重新登入」。', true);
+        return false;
+      }
+      if (!r.ok) return true;
+      if (!(j.scopes || []).includes('moderator:read:followers')) {
+        disconnectEventSub();
+        paintEs('✗ 這組授權沒有「讀取追隨者」權限，請按「重新登入」並按同意。', true);
+        return false;
+      }
+      if (j.expires_in) { S.esExpires = Date.now() + j.expires_in * 1000; save(); }
+      const days = j.expires_in ? Math.floor(j.expires_in / 86400) : null;
+      if (days !== null && days < 7) {
+        log('追隨授權剩約 ' + days + ' 天到期');
+        paintEs('⚠ 授權剩約 ' + days + ' 天到期，請提早按「重新登入」。', false);
+      } else paintEs('', false);
+      return true;
+    }))
+    .catch(() => true);
 }
 
 function connectEventSub() {
   dropEs();
   esWanted = false; esOk = false;
-  if (!S.esToken || !S.esClientId) return;
+  if (!S.esToken || !S.esClientId) { esBad = false; paintWarn(); return; }
   esWanted = true;
-  log('連線 EventSub…');
-  openEs('wss://eventsub.wss.twitch.tv/ws');
+  const gen = esGen;
+  validateEs().then(ok => {
+    if (!ok || gen !== esGen || !esWanted) return;
+    log('連線 EventSub…');
+    openEs('wss://eventsub.wss.twitch.tv/ws', false);
+    // 看門狗：Twitch 每 ~10 秒會送 keepalive，太久沒收到任何東西就是靜默斷線（不會觸發 onclose）
+    esWatch = setInterval(() => {
+      if (!esWanted || !esWs || esWs.readyState !== 1 || !esLastRx) return;
+      if (Date.now() - esLastRx > (esKeepSec + 10) * 1000) { log('EventSub 逾時無回應，強制重連'); connectEventSub(); }
+    }, 5000);
+    // 長時間開著也每小時再確認一次授權，過期當下就會在面板顯示
+    esValTimer = setInterval(validateEs, 3600000);
+  });
 }
-function openEs(url) {
-  esWs = new WebSocket(url);
-  esWs.onmessage = (e) => {
+function openEs(url, isReconnect) {
+  const ws = new WebSocket(url);
+  esWs = ws; esLastRx = 0;
+  ws.onmessage = (e) => {
+    if (ws !== esWs && ws !== esPrev) return;
+    esLastRx = Date.now();
     let d; try { d = JSON.parse(e.data); } catch { return; }
     const mt = d.metadata?.message_type;
-    if (mt === 'session_welcome') subscribeFollow(d.payload.session.id);
-    else if (mt === 'session_reconnect') openEs(d.payload.session.reconnect_url);
-    else if (mt === 'notification' && d.metadata.subscription_type === 'channel.follow') {
+    if (mt === 'session_welcome') {
+      if (ws !== esWs) return;
+      esKeepSec = d.payload.session.keepalive_timeout_seconds || 10;
+      if (isReconnect) {
+        // 換線：訂閱會自動搬過來，不用重訂；新線接上才關舊線
+        killEsSocket(esPrev); esPrev = null;
+        esOk = true; log('EventSub 換線完成 ✓');
+      } else subscribeFollow(d.payload.session.id);
+    } else if (mt === 'session_reconnect') {
+      if (ws !== esWs) return;
+      log('EventSub 伺服器要求換線…');
+      ws.onclose = ws.onerror = null;   // 舊線等新線 welcome 後再關，期間仍可收通知
+      esPrev = ws;
+      openEs(d.payload.session.reconnect_url, true);
+    } else if (mt === 'revocation') {
+      esOk = false;
+      log('追隨訂閱被 Twitch 撤銷：' + (d.payload?.subscription?.status || ''));
+      validateEs();                      // 多半是授權失效，交給 validate 判斷並顯示
+    } else if (mt === 'notification' && d.metadata.subscription_type === 'channel.follow') {
       const ev = d.payload.event || {};
       pushEvent('follow', { user: ev.user_name || ev.user_login || '' });
     }
   };
-  esWs.onclose = () => { esOk = false; if (esWanted) setTimeout(() => { if (esWanted) connectEventSub(); }, 5000); };
+  ws.onclose = (ev) => {
+    if (ws !== esWs) return;
+    esOk = false;
+    killEsSocket(esPrev); esPrev = null;
+    if (!esWanted) return;
+    log('EventSub 斷線（' + ev.code + '），5 秒後重連');
+    const gen = esGen;
+    setTimeout(() => { if (esWanted && gen === esGen) connectEventSub(); }, 5000);
+  };
 }
 function esApi(path, opts = {}) {
   opts.headers = { 'Authorization': 'Bearer ' + S.esToken, 'Client-Id': S.esClientId, 'Content-Type': 'application/json' };
@@ -1592,7 +1705,11 @@ function subscribeFollow(sessionId) {
       })
     });
   }).then(() => { esOk = true; log('EventSub 追隨已訂閱 ✓'); })
-    .catch(err => { esOk = false; log('EventSub 失敗：' + err.message); paintWarn(true); });
+    .catch(err => {
+      esOk = false; log('EventSub 失敗：' + err.message);
+      // 先查是不是授權問題（會顯示更明確的說明）；授權沒問題才顯示訂閱失敗原因
+      validateEs().then(ok => { if (ok) paintEs('✗ 追隨訂閱失敗：' + err.message, true); });
+    });
 }
 function disconnectEventSub() {
   esWanted = false; esOk = false;
@@ -1925,7 +2042,8 @@ for (const [name, spec] of Object.entries(BOXES)) makeBox(name, spec);
   $('btnReset').addEventListener('click', () => {
     if (!confirm('確定要把所有設定回復成預設值？')) return;
     // 連線資訊留著，不然每次還原都要重打頻道與憑證
-    const keep = { channel: S.channel, esToken: S.esToken, esClientId: S.esClientId, panel: S.panel, bg: S.bg };
+    const keep = { channel: S.channel, esToken: S.esToken, esClientId: S.esClientId, esLogin: S.esLogin, esExpires: S.esExpires,
+      licCode: S.licCode, licOkAt: S.licOkAt, panel: S.panel, bg: S.bg };
     const fresh = JSON.parse(JSON.stringify(DEFAULTS));
     for (const k of Object.keys(S)) delete S[k];
     Object.assign(S, fresh, keep);
@@ -2008,6 +2126,8 @@ function paintAuth(note) {
       (S.esExpires ? (left > 0 ? '授權還有約 ' + left + ' 天到期。' : '授權已過期，請重新登入。') : '');
   } else if (S.esToken) {
     el.textContent = '使用手動填入的憑證。';
+  } else if (LICENSE_API) {
+    el.textContent = '尚未登入。請先在最上面的「啟用」區登入並輸入啟用碼。';
   } else {
     el.innerHTML = '尚未登入。留言和訂閱通知不用登入就有；只有<b>追隨通知</b>需要。';
   }
@@ -2035,7 +2155,7 @@ function twLogout() {
     fetch('https://id.twitch.tv/oauth2/revoke', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: 'client_id=' + encodeURIComponent(cid) + '&token=' + encodeURIComponent(token) }).catch(() => {});
   }
-  dropEs(); esWanted = false; esOk = false;
+  dropEs(); esWanted = false; esOk = false; esBad = false; paintWarn();
   paintAuth();
 }
 
@@ -2068,9 +2188,89 @@ async function handleAuthReturn() {
   paintAuth();
 }
 
+/* ══ 啟用碼鎖 ═══════════════════════════════════════════════
+   LICENSE_API 留空時整段不作用。上鎖時每次載入都問一次伺服器；
+   伺服器明確說不行（碼不存在／停用／綁了別的帳號）就全部停，
+   連不到伺服器或只是 Twitch 登入過期，最近 LIC_GRACE_DAYS 天內驗證過就先放行。 */
+function setLocked(locked, note) {
+  document.body.classList.toggle('locked', locked);
+  $('lockNote').textContent = note || '';
+}
+
+function paintLicense(msg, kind) {
+  if (!LICENSE_API) return;
+  $('licSec').classList.add('on');
+  const logged = !!S.esToken;
+  $('licStep1').textContent = !logged ? '第一步：先用 Twitch 登入（要用你直播的帳號）。'
+    : '已登入 Twitch' + (S.esLogin ? '：' + S.esLogin : '') + (kind === 'good' ? '。' : '。輸入啟用碼後按「啟用」。');
+  $('licLoginRow').style.display = logged ? 'none' : '';
+  const el = $('licInfo');
+  el.textContent = msg || '';
+  el.className = 'hint' + (kind ? ' ' + kind : '');
+}
+
+function graceOk() {
+  return S.licOkAt && Date.now() - S.licOkAt < LIC_GRACE_DAYS * 86400000;
+}
+
+async function checkLicense() {
+  if (!LICENSE_API) return { ok: true };
+  if (!S.esToken) return { ok: false, msg: '請先用 Twitch 登入，再輸入啟用碼。' };
+  if (!S.licCode) return { ok: false, msg: '請輸入啟用碼。' };
+  let r, j;
+  try {
+    r = await fetch(LICENSE_API.replace(/\/+$/, '') + '/check', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: S.licCode, token: S.esToken })
+    });
+    j = await r.json().catch(() => ({}));
+  } catch (e) { r = null; }
+
+  if (r && r.ok && j.ok) {
+    S.licOkAt = Date.now(); save();
+    return { ok: true, msg: j.first ? '✓ 啟用成功，已綁定目前的 Twitch 帳號。' : '✓ 已啟用' };
+  }
+  // 連不到伺服器、伺服器出錯、或只是 Twitch 登入過期 → 最近驗證過就先放行
+  const soft = !r || r.status >= 500 || (j && j.reason === 'token');
+  if (soft && graceOk()) {
+    const left = Math.max(1, Math.ceil((S.licOkAt + LIC_GRACE_DAYS * 86400000 - Date.now()) / 86400000));
+    const why = (j && j.reason === 'token') ? 'Twitch 登入已過期，請盡快按「重新登入」' : '暫時連不到啟用伺服器';
+    return { ok: true, warn: true, msg: '⚠ ' + why + '，先沿用上次的啟用狀態（約剩 ' + left + ' 天）。' };
+  }
+  if (!r) return { ok: false, msg: '連不到啟用伺服器，請檢查網路後按「啟用」重試。' };
+  if (j && j.reason === 'token') return { ok: false, msg: 'Twitch 登入已過期，請在「追隨通知」區按「重新登入」。' };
+  return { ok: false, msg: (j && j.msg) || ('啟用失敗（' + r.status + '）') };
+}
+
+async function licenseGate() {
+  if (!LICENSE_API) return true;
+  paintLicense('確認啟用中…');
+  const res = await checkLicense();
+  paintLicense(res.msg, res.ok ? (res.warn ? '' : 'good') : 'bad');
+  setLocked(!res.ok, res.ok ? '' : 'Overlay 尚未啟用：在來源上按右鍵「互動」，按 P 打開面板輸入啟用碼');
+  if (!res.ok) setStatus('', '未啟用');
+  return res.ok;
+}
+
+if (LICENSE_API) {
+  $('inLicCode').value = S.licCode || '';
+  $('btnLicLogin').addEventListener('click', twLogin);
+  $('btnLicActivate').addEventListener('click', () => {
+    S.licCode = $('inLicCode').value.trim().toUpperCase();
+    save();
+    disconnect(true);
+    retry = 0;
+    boot();
+  });
+  // 還沒驗證完之前先蓋住，避免未啟用的人在載入那一瞬間看到東西
+  setLocked(true, '');
+  paintLicense('');
+}
+
 async function boot() {
   applyVars();
   buildMarquee();
+  if (!(await licenseGate())) return;
   if (S.channel) {
     if (+S.emotes) {
       try { log('已載入 ' + await loadEmotes(String(S.channel).trim().toLowerCase()) + ' 個第三方表符'); }
