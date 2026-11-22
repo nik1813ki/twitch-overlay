@@ -587,7 +587,7 @@ const TWITCH_CLIENT_ID = '5mk26gp5x6n4es2ilo6fwffwc0rup2';
 /* 啟用碼鎖：填上啟用碼伺服器（Cloudflare Worker）的網址就會上鎖，例如 https://overlay-license.帳號.workers.dev
    留空＝不上鎖，任何人都能用。上鎖後買家要先用 Twitch 登入、再輸入你發的啟用碼，
    第一次啟用時碼會綁定他當下登入的 Twitch 帳號。 */
-const LICENSE_API = '';
+const LICENSE_API = 'https://overlay-license.a31850664.workers.dev';
 const LIC_GRACE_DAYS = 7;   // 連不到伺服器或 Twitch 登入過期時，最近這幾天內驗證過就先放行
 
 /* ══ 設定 ═══════════════════════════════════════════════════ */
