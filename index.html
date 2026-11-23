@@ -308,7 +308,10 @@
   #log { font-size: 11px; color: #7c8499; max-height: 84px; overflow-y: auto; background: #0d0f16; border-radius: 6px; padding: 6px 8px; line-height: 1.6; white-space: pre-wrap; word-break: break-all; }
   .tplbox { margin-bottom: 10px; }
   .tplbox .tplname { font-weight: 600; color: #b9c2d8; margin-bottom: 4px; }
-  #urlOut { font-size: 11px; height: 60px; }
+  .obs-steps { margin: 4px 0 10px; padding-left: 20px; font-size: 12px; line-height: 1.7; color: #b9c2d8; }
+  .btn.obs-copy { width: 100%; padding: 10px; font-size: 14px; }
+  #obsCopyMsg.good { color: #9be3a8; }
+  #obsCopyMsg.bad { color: #ff8a8a; }
 
   /* 啟用碼鎖：未啟用時畫面上只留一行提示 */
   #lockNote { display: none; position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%);
@@ -336,6 +339,21 @@
       <div class="btnrow"><button class="btn sm" id="btnLicActivate">啟用</button></div>
       <div class="hint" id="licInfo"></div>
       <div class="hint">第一次啟用時，啟用碼會綁定你當下登入的 Twitch 帳號，之後只有這個帳號能用。</div>
+    </div>
+  </details>
+
+  <details open id="obsSec">
+    <summary>放進 OBS</summary>
+    <div class="sec">
+      <div class="hint">在這個瀏覽器裡把所有設定都弄好（登入、啟用、外觀），不用在 OBS 裡操作：</div>
+      <ol class="obs-steps">
+        <li>按下面的「複製 OBS 網址」。</li>
+        <li>OBS → 來源 →「＋」→「瀏覽器」，把網址貼進「網址」欄，寬高設成畫布大小（通常 1920 × 1080），按確定。</li>
+        <li>之後<b>改了設定</b>或<b>重新登入 Twitch</b>，要再按一次複製，貼回同一個來源（來源上按右鍵 →「內容」→ 網址）。</li>
+      </ol>
+      <button class="btn obs-copy" id="btnCopyObs">複製 OBS 網址</button>
+      <div class="hint" id="obsCopyMsg"></div>
+      <div class="hint">⚠ 這串網址含有你的 Twitch 登入授權（和啟用碼），不要傳給別人，也不要出現在直播畫面上。</div>
     </div>
   </details>
 
@@ -539,25 +557,11 @@
     </div>
   </details>
 
-  <details open>
-    <summary>OBS 設定</summary>
-    <div class="sec">
-      <div class="hint"><b>放進 OBS</b>：來源 → ＋ → 瀏覽器 → 「網址」貼上這一頁的網址（不要勾本機檔案），寬高設成畫布大小。<br>
-      然後在該來源上按右鍵 →「<b>互動</b>」，就能在 OBS 裡直接操作這個面板：填頻道、按連線、用 Twitch 登入、調樣式。OBS 會自己記住設定。<br>
-      調好之後按下面的按鈕把面板收起來，畫面就只剩彈幕。</div>
-      <button class="btn" id="btnHidePanel">隱藏面板（只留彈幕）</button>
-      <div class="hint">收起來之後，在「互動」視窗裡按 <code>P</code> 鍵就能再叫回面板。</div>
-    </div>
-  </details>
-
   <details>
-    <summary>OBS 網址匯出（進階）</summary>
+    <summary>在 OBS 互動視窗裡操作（選用）</summary>
     <div class="sec">
-      <div class="hint">如果不想在 OBS 的互動視窗裡登入：先在一般瀏覽器把這一頁設定好、登入好，再按下面產生網址，貼到 OBS 瀏覽器來源的「網址」欄。設定只會在第一次載入時帶進 OBS，之後在 OBS 裡改的會保留。</div>
-      <button class="btn" id="btnGenUrl">產生網址</button>
-      <textarea id="urlOut" readonly placeholder="按上方按鈕產生，含目前全部設定"></textarea>
-      <button class="btn sm ghost" id="btnCopyUrl">複製網址</button>
-      <div class="hint">OBS →「瀏覽器」來源 → 貼上網址，寬高設為畫布大小，背景自動透明。這串網址含有你的登入授權，請勿給別人或出現在直播畫面上。</div>
+      <div class="hint">一般用上面「放進 OBS」的複製網址就好。如果想直接在 OBS 裡改：在來源上按右鍵 →「互動」，按 <code>P</code> 叫出面板，改完按下面的按鈕收起來。</div>
+      <button class="btn" id="btnHidePanel">隱藏面板（只留彈幕）</button>
     </div>
   </details>
 </div>
@@ -2080,18 +2084,37 @@ for (const [name, spec] of Object.entries(BOXES)) makeBox(name, spec);
     boot();
   });
   $('btnDisconnect').addEventListener('click', () => disconnect(false));
-  $('btnGenUrl').addEventListener('click', () => {
+  // 「放進 OBS」：把目前全部設定（含登入授權與啟用碼）打包進網址，一鍵複製
+  $('btnCopyObs').addEventListener('click', () => {
+    const msg = (t, k) => { const el = $('obsCopyMsg'); el.textContent = t; el.className = 'hint' + (k ? ' ' + k : ''); };
+    if (LICENSE_API && document.body.classList.contains('locked')) {
+      msg('請先完成上面的「啟用」（登入 Twitch ＋ 輸入啟用碼），不然貼進 OBS 也會是鎖住的。', 'bad');
+      return;
+    }
+    if (!String(S.channel || '').trim()) {
+      msg('請先登入 Twitch 或在「連線」填頻道名稱。', 'bad');
+      return;
+    }
     const out = JSON.parse(JSON.stringify(S));
-    delete out.panel; delete out.bg;
+    delete out.panel; delete out.bg; out.hidePanel = 0;
     // 一定要 encodeURIComponent：base64 的 '+' 在查詢字串裡會被當成空白
     const data = encodeURIComponent(btoa(unescape(encodeURIComponent(JSON.stringify(out)))));
-    $('urlOut').value = location.href.split('?')[0] + '?panel=0&bg=0&cfg=' + data;
-  });
-  $('btnCopyUrl').addEventListener('click', () => {
-    const ta = $('urlOut');
-    if (!ta.value) return;
-    ta.select();
-    navigator.clipboard?.writeText(ta.value).catch(() => document.execCommand('copy'));
+    const url = location.href.split(/[?#]/)[0] + '?panel=0&bg=0&cfg=' + data;
+    const done = () => {
+      msg('✓ 已複製！貼到 OBS 瀏覽器來源的「網址」欄。' + (S.esToken ? '' : '（還沒登入 Twitch，追隨通知不會跳）'), 'good');
+      $('btnCopyObs').textContent = '已複製 ✓';
+      setTimeout(() => { $('btnCopyObs').textContent = '複製 OBS 網址'; }, 2000);
+    };
+    const fallback = () => {
+      const ta = document.createElement('textarea');
+      ta.value = url; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      let ok = false; try { ok = document.execCommand('copy'); } catch (e) {}
+      ta.remove();
+      ok ? done() : msg('複製失敗，請換用 Chrome 或 Edge 再試一次。', 'bad');
+    };
+    if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(url).then(done, fallback);
+    else fallback();
   });
   buildTplGrid();
   refreshGroups();
@@ -2251,7 +2274,7 @@ async function licenseGate() {
   paintLicense('確認啟用中…');
   const res = await checkLicense();
   paintLicense(res.msg, res.ok ? (res.warn ? '' : 'good') : 'bad');
-  setLocked(!res.ok, res.ok ? '' : 'Overlay 尚未啟用：在來源上按右鍵「互動」，按 P 打開面板輸入啟用碼');
+  setLocked(!res.ok, res.ok ? '' : 'Overlay 尚未啟用或登入已過期：請用瀏覽器打開這個網址完成登入／啟用，再按「複製 OBS 網址」貼回這個來源');
   if (!res.ok) setStatus('', '未啟用');
   return res.ok;
 }
