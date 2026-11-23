@@ -453,7 +453,7 @@
   <details>
     <summary>跑馬燈（自訂文本）</summary>
     <div class="sec">
-      <textarea id="inMqText" rows="2" placeholder="輸入要無限循環滾動的文字"></textarea>
+      <textarea id="inMqText" rows="2" placeholder="輸入要無限循環滾動的文字&#10;一行一句，換行就是下一句（每句之間會自動放星芒）"></textarea>
       <div class="row"><label>速度</label><input type="range" id="inMqSpeed" min="30" max="400" step="10"><span class="val" id="vMqSpeed"></span></div>
       <div class="row"><label>字級</label><input type="range" id="inMqFont" min="12" max="60" step="1"><span class="val" id="vMqFont"></span></div>
       <div class="row"><label>位置</label>
@@ -1265,15 +1265,19 @@ function buildMarquee() {
   marqueeInner.style.fontSize = px(S.mqFont).toFixed(1) + 'px';
   marqueeInner.innerHTML = '';
 
+  // 一行一句：每句後面接一顆星芒，依序輪流，全部播完再從第一句開始
+  const lines = String(S.mqText).split(/\r?\n/).map(t => t.trim()).filter(Boolean);
   const unit = () => {
     const f = document.createDocumentFragment();
-    const s = document.createElement('span');
-    s.className = 'mq-text';
-    s.textContent = S.mqText;
-    const sep = document.createElement('span');
-    sep.className = 'mq-sep';
-    sep.innerHTML = sparkSvg('s1');
-    f.append(s, sep);
+    for (const line of lines) {
+      const s = document.createElement('span');
+      s.className = 'mq-text';
+      s.textContent = line;
+      const sep = document.createElement('span');
+      sep.className = 'mq-sep';
+      sep.innerHTML = sparkSvg('s1');
+      f.append(s, sep);
+    }
     return f;
   };
   marqueeInner.appendChild(unit());
