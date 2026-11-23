@@ -6,7 +6,7 @@
 <title>Twitch 直播 Overlay</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=Shippori+Mincho:wght@400;500;700&family=Zen+Old+Mincho:wght@400;500;700;900&family=Noto+Serif+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=Shippori+Mincho:wght@400;500;700&family=Zen+Old+Mincho:wght@400;500;700;900&family=Noto+Serif+JP:wght@400;500;700&family=Noto+Serif+TC:wght@400;500;700&family=Chiron+GoRound+TC:wght@400;500;700&family=LXGW+WenKai+TC:wght@400;700&family=Iansui&display=swap" rel="stylesheet">
 <!-- 事件卡樣式（使用者自行維護，改了存檔重新整理即生效，不需要動這個檔案） -->
 <link rel="stylesheet" href="event-card.css">
 <style>
@@ -165,6 +165,14 @@
   #column.right .card > .text { padding-left: 0; }
   #column.right .card > .row { padding-right: calc(var(--spark-size) * 1.6); }
 
+  /* 遊戲模式限定的顏色（#column.game）：一般模式不受影響，維持純白。
+     關鍵字命中（.hit）的強調色優先，所以排除 .hit */
+  #column.game { --ink: var(--g-ink, #FFFFFF); }
+  #column.game .text { color: var(--g-ink, #FFFFFF); }
+  #column.game .msg:not(.hit) .mark { background: var(--g-cross, #FFFFFF); }
+  #column.game .msg:not(.hit) .line { background: linear-gradient(90deg, transparent 0%, var(--g-ink) 12%, var(--g-ink) 88%, transparent 100%); }
+  #column.game .msg:not(.hit) .spark svg { fill: var(--g-ink, #FFFFFF); }
+
   /* ══ 模式三：底部橫式滾動（同樣的卡片橫向飛過）═══════════ */
   #hsLayer { position: absolute; inset: 0; display: none; overflow: hidden; }
   #hsLayer.on { display: block; }
@@ -286,6 +294,12 @@
   }
   input[type=text]:focus, textarea:focus, select:focus { border-color: rgba(203,182,255,.55); }
   input[type=range] { flex: 1; accent-color: #cbb6ff; min-width: 0; }
+  /* 色相滑桿：軌道本身就是色相環的顏色（與橫幅實際用的 90% 彩度、80% 亮度一致） */
+  input[type=range].hue { -webkit-appearance: none; appearance: none; height: 12px; border-radius: 6px; outline: none;
+    background: linear-gradient(90deg, hsl(0,90%,80%), hsl(60,90%,80%), hsl(120,90%,80%), hsl(180,90%,80%), hsl(240,90%,80%), hsl(300,90%,80%), hsl(360,90%,80%)); }
+  input[type=range].hue::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 20px; border-radius: 4px;
+    background: #fff; border: 2px solid #12141c; box-shadow: 0 0 0 1px #fff; cursor: pointer; }
+  .hue-sw { flex: none; width: 26px; height: 20px; border-radius: 4px; border: 1px solid rgba(255,255,255,.4); }
   input[type=color] { width: 40px; height: 28px; padding: 0; border: 1px solid rgba(255,255,255,.18); border-radius: 6px; background: transparent; cursor: pointer; }
   select option { background: #12151d; color: #fff; }
   textarea { resize: vertical; }
@@ -406,6 +420,11 @@
       <div class="hint"><b>遊戲模式</b>：彈幕靠最右側直列，事件用事件卡排進同一欄，畫面中央完全不被遮住。<br>
       <b>一般模式</b>：事件改回華麗橫幅（留言版面維持你目前的設定，不會被動到）。<br>
       兩者都只是一次設定好多個選項，之後仍可在「事件文本」區逐一微調。套用後會重新載入。</div>
+      <div id="grpGameColor">
+        <div class="hint" style="margin:6px 0 2px;">遊戲模式的顏色（只在遊戲模式生效，一般模式維持純白）</div>
+        <div class="row"><label>整體</label><input type="color" id="inGInk"><span class="hint" style="flex:1;">名字、中線、星芒、留言文字、通知卡</span></div>
+        <div class="row"><label>十字架</label><input type="color" id="inGCross"><span class="hint" style="flex:1;">名字兩側的十字架</span></div>
+      </div>
       <button class="btn sm" id="btnRegion">在畫面上拖曳調整區域</button>
       <div class="hint">開啟後畫面出現虛線框：拖曳框內移動、拖曳四角縮放；底部橫式則是拖曳整條行道帶上下移動。下方滑桿可微調，兩邊即時同步。此框只是工具，OBS 不會顯示。</div>
 
@@ -508,8 +527,10 @@
       <div class="row"><label>橫幅秒數</label><input type="range" id="inEvDur" min="3" max="15" step=".5"><span class="val" id="vEvDur"></span></div>
       <div class="row"><label>垂直位置</label><input type="range" id="inEvY" min="0" max="100" step="1"><span class="val" id="vEvY"></span></div>
       <div class="hint">0 ＝ 最上方，50 ＝ 畫面正中間，100 ＝ 最下方。</div>
-      <div class="row"><label>色相 1</label><input type="range" id="inH1" min="0" max="360" step="1"><span class="val" id="vH1"></span></div>
-      <div class="row"><label>色相 2</label><input type="range" id="inH2" min="0" max="360" step="1"><span class="val" id="vH2"></span></div>
+      <div class="row"><label>色相 1</label><input type="range" class="hue" id="inH1" min="0" max="360" step="1"><span class="hue-sw" id="swH1"></span></div>
+      <div class="row"><label>色相 2</label><input type="range" class="hue" id="inH2" min="0" max="360" step="1"><span class="hue-sw" id="swH2"></span></div>
+      <div class="hint">色條上拉到哪個顏色，橫幅就是那個顏色；右邊方塊是實際顏色。色相 1 偏左半邊、色相 2 偏右半邊與光暈。</div>
+      <button class="btn sm" id="btnBannerPreview">預覽橫幅</button>
     </div>
   </details>
 
@@ -614,6 +635,8 @@ const DEFAULTS = {
   // 直列滾動
   colMax: 12, colX: 76, colY: 8, colW: 22, colH: 74,   // 直列不會自動消失，只靠 colMax 擠掉舊的
   colAlign: 'left',   // 'right' = 名字列與文字靠右，短留言貼著畫面右緣（遊戲模式用）
+  gameMode: null,     // 1＝已套用遊戲模式（通知卡改用 .gev 版面、可改色）；null＝舊設定，載入時依版面推斷
+  gInk: '#FFFFFF', gCross: '#FFFFFF',   // 遊戲模式限定：整體顏色、十字架顏色
 
   // 底部橫式
   hsSpeed: 140, hsLanes: 3, hsBottom: 30, hsMaxWait: 8,
@@ -652,7 +675,11 @@ const FONTS = {
   sans:   { label: '黑體 Noto Sans TC',   css: "'Noto Sans TC', 'Microsoft JhengHei', sans-serif" },
   gothic: { label: '日系黑體 Zen Kaku',    css: "'Zen Kaku Gothic New', 'Noto Sans TC', sans-serif" },
   mincho: { label: '明朝 Shippori',        css: "'Shippori Mincho', 'Noto Serif TC', serif" },
-  old:    { label: '明朝 Zen Old',         css: "'Zen Old Mincho', 'Noto Serif JP', serif" }
+  old:    { label: '明朝 Zen Old',         css: "'Zen Old Mincho', 'Noto Serif JP', serif" },
+  serif:  { label: '宋體 Noto Serif TC',   css: "'Noto Serif TC', 'PMingLiU', serif" },
+  round:  { label: '圓體 Chiron GoRound',  css: "'Chiron GoRound TC', 'Noto Sans TC', sans-serif" },
+  wenkai: { label: '手寫楷體 霞鶩文楷',     css: "'LXGW WenKai TC', 'Noto Serif TC', serif" },
+  iansui: { label: '手寫風 芫荽',          css: "'Iansui', 'Noto Sans TC', sans-serif" }
 };
 const EV_NAMES = { follow: '追隨', sub: '訂閱', resub: '續訂', subgift: '禮物訂閱', raid: 'Raid', bits: 'Bits' };
 
@@ -695,6 +722,10 @@ if (+S.evAsChat) {
 for (const k in S.tpl) {
   if (S.tpl[k].layout === 'strip') S.tpl[k].layout = 'card';
 }
+
+// 遊戲模式旗標是後來才加的：以前按過「套用遊戲模式」的設定（直列＋靠右）視為遊戲模式
+if (S.gameMode === null || S.gameMode === undefined) S.gameMode = (S.mode === 'column' && S.colAlign === 'right') ? 1 : 0;
+const isGame = () => !!+S.gameMode && S.mode === 'column';
 
 // 強調色一次性換成淡冰藍，不管存檔原本是什麼顏色。
 // 判斷依據是「原始存檔裡有沒有這個記號」而不是 S 裡的值 ——
@@ -758,6 +789,10 @@ function applyVars() {
   colEl.style.left = S.colX + '%'; colEl.style.top = S.colY + '%';
   colEl.style.width = S.colW + '%'; colEl.style.height = S.colH + '%';
   colEl.classList.toggle('right', S.colAlign === 'right');
+  colEl.classList.toggle('game', isGame());
+  colEl.style.setProperty('--g-ink', S.gInk || '#FFFFFF');
+  colEl.style.setProperty('--g-cross', S.gCross || '#FFFFFF');
+  for (const n of ['1', '2']) { const sw = $('swH' + n); if (sw) sw.style.background = 'hsl(' + S['h' + n] + ',90%,80%)'; }
   hsEl.classList.toggle('on', S.mode === 'hscroll');
 
   evBand.style.top = S.evY + '%';
@@ -798,71 +833,42 @@ function sizeFor(text) {
   const base = len > 46 ? S.textSize * .86 : len > 26 ? S.textSize * .93 : S.textSize;
   return px(base);
 }
-/* ── 事件卡（結構對應 event-card.css）───────────────────────
-   追隨用 .follow（大十字架落下）／其餘用 .gift（✦ 爆開＋數值）
-   .ev-act 的文字用 *星號* 包住的部分轉成 <b>                */
+/* ── 事件卡（結構對應 event-card.css；2026-11-23 依參考圖改版）──────────
+   上名字（兩側星芒）、中線（兩端星芒）、下大字動作文字（*星號* 變粗體）、右側 ✦大數值。
+   數值樣板留空就不顯示右欄。舊版（右側圓形十字架＋擴散圈）已移除。 */
 const SPARK_SVG = sparkSvg('');
 
-function actNodes(tplText, data, isFollow) {
-  const frag = document.createDocumentFragment();
-  if (isFollow) {
-    const w = document.createElement('span');
-    w.className = 'mark-wrap';
-    w.innerHTML = '<i class="mark"></i>';
-    frag.appendChild(w);
-  } else {
-    const plus = document.createElement('b');
-    plus.className = 'plus';
-    plus.textContent = '＋';
-    frag.appendChild(plus);
-  }
-  // *粗體* 以外的部分維持一般字重
-  renderTpl(tplText, data).split(/(\*[^*]+\*)/).forEach(part => {
+function eventCardEl(msg) {
+  const el = document.createElement('div');
+  el.className = 'msg ev gev';
+  const val = String(msg.val || '').trim();
+  if (!val) el.classList.add('noval');
+  const num = parseFloat(val.replace(/[^\d.]/g, ''));
+  if (Number.isFinite(num) && num >= S.hotAt) el.classList.add('hot');
+  el.innerHTML =
+    '<div class="gev-card">' +
+      '<div class="gev-main">' +
+        '<div class="gev-name"><span class="gev-nsp l">' + SPARK_SVG + '</span><span class="gev-nm"></span>' +
+          '<span class="gev-nsp r">' + SPARK_SVG + '</span></div>' +
+        '<div class="gev-rule"><div class="gev-line"></div>' +
+          '<span class="gev-spark l">' + SPARK_SVG + '</span><span class="gev-spark r">' + SPARK_SVG + '</span></div>' +
+        '<div class="gev-act"></div>' +
+      '</div>' +
+      '<div class="gev-side"><span class="gev-plus">' + SPARK_SVG + '</span><span class="gev-val"></span></div>' +
+    '</div>';
+  el.querySelector('.gev-nm').textContent = msg.name;
+  const act = el.querySelector('.gev-act');
+  renderTpl(msg.act || '', msg.data).split(/(\*[^*]+\*)/).forEach(part => {
     if (!part) return;
     const bold = part.startsWith('*') && part.endsWith('*');
     const node = document.createElement(bold ? 'b' : 'span');
     node.textContent = bold ? part.slice(1, -1) : part;
-    frag.appendChild(node);
+    act.appendChild(node);
   });
-  return frag;
-}
-
-function eventCardEl(msg) {
-  const isFollow = msg.evType === 'follow';
-  const el = document.createElement('div');
-  el.className = 'msg ev ' + (isFollow ? 'follow' : 'gift');
-
-  const num = parseFloat(String(msg.val).replace(/[^\d.]/g, ''));
-  if (Number.isFinite(num) && num >= S.hotAt) el.classList.add('hot');
-
-  el.innerHTML =
-    '<div class="ev-card">' +
-      '<div class="ev-main">' +
-        '<div class="ev-name"></div>' +
-        '<div class="ev-rule"><div class="line"></div>' +
-          '<span class="ev-spark">' + SPARK_SVG + '</span></div>' +
-        '<div class="ev-act"></div>' +
-      '</div>' +
-      '<div class="ev-side">' +
-        (isFollow
-          ? '<span class="ev-cross"><span class="ring"></span>' +
-            '<span class="drop"><i class="mark"></i></span>' +
-            sparkSvg('tw') + '</span>'
-          : '<span class="ev-star"><span class="ring"></span>' +
-            '<span class="burst">' + SPARK_SVG + '</span></span>' +
-            '<span class="ev-val"></span>') +
-      '</div>' +
-    '</div>';
-
-  el.querySelector('.ev-name').textContent = msg.name;
-  el.querySelector('.ev-act').appendChild(actNodes(msg.act, msg.data, isFollow));
-  const val = el.querySelector('.ev-val');
-  if (val) {
-    val.textContent = msg.val;
-    if (!msg.val) val.style.display = 'none';
-  }
+  el.querySelector('.gev-val').textContent = val;
   return el;
 }
+
 
 function baseEl(msg) {
   if (msg.isCard) return eventCardEl(msg);
@@ -2030,6 +2036,7 @@ for (const [name, spec] of Object.entries(BOXES)) makeBox(name, spec);
     S.colX = 84; S.colY = 8; S.colW = 15; S.colH = 84;
     S.colAlign = 'right';
     S.colMax = 12;
+    S.gameMode = 1;
     for (const k in S.tpl) S.tpl[k].layout = 'card';     // 事件用事件卡排進同一欄
     save();
     location.reload();   // 一次改太多項，重載才能把面板每個控制項同步過來
@@ -2038,9 +2045,22 @@ for (const [name, spec] of Object.entries(BOXES)) makeBox(name, spec);
   $('btnNormalMode').addEventListener('click', () => {
     // 只把事件改回橫幅，留言版面不動 —— 使用者可能喜歡目前的彈幕排版
     for (const k in S.tpl) S.tpl[k].layout = 'banner';
+    S.gameMode = 0;
     save();
     location.reload();
   });
+
+  // 遊戲模式顏色
+  for (const [id, key] of [['inGInk', 'gInk'], ['inGCross', 'gCross']]) {
+    $(id).value = S[key] || '#FFFFFF';
+    $(id).addEventListener('input', () => { S[key] = $(id).value; applyVars(); save(); });
+  }
+  // 預覽橫幅：直接排進橫幅佇列（不管目前事件用哪種版型），用來看色相
+  $('btnBannerPreview').addEventListener('click', () => {
+    evQueue.push({ type: 'follow', data: { user: '色彩預覽', count: '' } });
+    pumpEvents();
+  });
+
 
   $('btnHidePanel').addEventListener('click', () => {
     S.hidePanel = 1;

@@ -1,199 +1,112 @@
 /* ============================================================
-   事件通知卡（送禮 / 追隨）樣式
-   與一般彈幕（留言卡）共用 :root 變數、.mark、.spark 與動畫慣例
-   出現在直列留言欄 #column 裡，但排版為左右兩欄，不同於留言卡
+   事件通知卡（「事件卡」版型，遊戲模式時排在直列留言欄 #column 裡）
+   2026-11-23 依使用者參考圖（八云幻夜／粉丝团灯牌／+¥0.10）全面改版；
+   舊版（右側圓形十字架＋擴散圈）使用者說很醜、會壓到字，已整個移除。
+   大螢幕橫幅（華麗橫幅）不在這個檔案，未改動。
 
-   ── 設計約束 ────────────────────────────────────────────
-   延續留言卡：純白、實心、清晰。不用模糊、不用光暈、不用描邊。
-   （.ring 是一次性擴散的實線圈，播完即消失，不是光暈）
+        ✦ 名字 ✦
+       ✦───────────────────✦     ✦ 數值
+          動作文字（大字）
 
-   ── HTML 結構：送禮 ─────────────────────────────────────
-   <div class="msg ev gift">                 大額加 hot 類別 → 換 accent 色
-     <div class="ev-card">
-       <div class="ev-main">
-         <div class="ev-name">名字</div>
-         <div class="ev-rule">
-           <div class="line"></div>
-           <span class="ev-spark"><svg>…</svg></span>
-         </div>
-         <div class="ev-act">
-           <b class="plus">＋</b><span>贈送</span><b>小奇點</b>
-         </div>
+   左欄：名字（兩側小星芒）／兩端有星芒的線／大字動作文字（面板「事件文本」的動作文字，*星號* 變粗體）
+   右欄：數值（面板的數值樣板，例如續訂月數 {months}）；樣板留空時右欄不出現，左欄佔滿。
+
+   <div class="msg ev gev [hot] [noval]">
+     <div class="gev-card">
+       <div class="gev-main">
+         <div class="gev-name"><span class="gev-nsp l">✦</span><span class="gev-nm">名字</span><span class="gev-nsp r">✦</span></div>
+         <div class="gev-rule"><div class="gev-line"></div><span class="gev-spark l">✦</span><span class="gev-spark r">✦</span></div>
+         <div class="gev-act">贈送 <b>訂閱</b></div>
        </div>
-       <div class="ev-side">
-         <span class="ev-star">
-           <span class="ring"></span>
-           <span class="burst"><svg>…</svg></span>
-         </span>
-         <span class="ev-val">1,000</span>
-       </div>
+       <div class="gev-side"><span class="gev-plus">✦</span><span class="gev-val">5</span></div>
      </div>
    </div>
 
-   ── HTML 結構：追隨 ─────────────────────────────────────
-   <div class="msg ev follow">
-     <div class="ev-card">
-       <div class="ev-main">
-         <div class="ev-name">名字</div>
-         <div class="ev-rule">…同上…</div>
-         <div class="ev-act">
-           <span class="mark-wrap"><i class="mark"></i></span>
-           <span>成為第</span><b>1,284</b><span>位追隨者</span>
-         </div>
-       </div>
-       <div class="ev-side">
-         <span class="ev-cross">
-           <span class="ring"></span>
-           <span class="drop"><i class="mark"></i></span>
-           <svg class="tw">…</svg>
-         </span>
-       </div>
-     </div>
-   </div>
-
-   星芒 SVG 同留言卡：
-   <svg viewBox="0 0 100 100"><path d="M50 0 Q61 39 100 50 Q61 61 50 100 Q39 61 0 50 Q39 39 50 0 Z"/></svg>
-
-   ── 收款 / 綠界 備註 ────────────────────────────────────
-   目前送禮 = Twitch 小奇點（.ev-act 寫「小奇點」，.ev-val 寫點數）。
-   之後的收款、綠界贊助沿用同一個 .gift 結構，只替換：
-     .ev-act 內容 → 例「＋ 綠界贊助」
-     .ev-val 內容 → 例「NT$150」
-   hot 門檻由 JS 依金額判斷後加上 .hot 類別。
-
-   ── 關鍵提醒 ────────────────────────────────────────────
-   1. 星芒掛在 .ev-rule 上，不掛在 .line 上（.line 會 scaleX）。
-   2. .msg 只負責定位，.ev-card 才負責動畫。
-   3. #column 需要左右留 14px 內距，否則 .ring 與兩端星芒會被 overflow 切掉。
+   設計約束：純白（或遊戲模式的整體顏色）、實心、清晰；不用模糊、光暈、描邊。
+   星芒掛在 .gev-rule 上，不掛在 .gev-line 上（線會 scaleX）。.msg 只負責定位，.gev-card 負責動畫。
    ============================================================ */
 
 :root {
-  /* 事件卡整體以留言字級為基準，比留言稍大一點點。
-     --text-size 已含「整體縮放」，所以卡片會跟留言一起放大縮小，
-     不會出現留言變大、卡片卻停在固定 px 的字級落差。 */
+  /* 以留言字級為基準，跟著「整體縮放」一起放大縮小 */
   --ev-base: calc(var(--text-size, 17px) * 1.08);
-
-  --ev-name-size: 1em;        /* 以下都是相對 --ev-base 的倍率 */
-  --ev-act-size: .95em;
-  --ev-val-size: 1.35em;
-  --ev-val-size-hot: 1.55em;
-  --ev-star-size: 1.4em;
-  --ev-cross-size: 1.9em;
-  --ev-indent: 1em;           /* 名字與動作文字相對中線起點的縮排 */
   --ev-ease: cubic-bezier(.22,1,.36,1);
 }
 
-/* 左右留白要夠讓 .ring 擴散與兩端星芒不被 overflow 切掉。
-   跟著字級一起縮放，否則放大後圈會頂到欄位邊界被切。 */
+/* 左右留白：線兩端的星芒才不會被欄位的 overflow 切掉（數值沿用舊版，不影響留言排版） */
 #column { padding: 0 calc(var(--text-size, 17px) * .95); }
 
 .msg.ev { flex-shrink: 0; --c: var(--ink, #FFFFFF); }
 .msg.ev.hot { --c: var(--accent); }
 
-.ev-card {
+.msg.gev .gev-card {
   display: grid;
-  /* 右欄用 minmax(0, auto) 而非 auto：字級調很大時右欄才會跟著讓步，
-     不然整個 grid 會被撐寬、數值直接被欄位的 overflow 切掉 */
   grid-template-columns: minmax(0, 1fr) minmax(0, auto);
   align-items: center;
-  column-gap: 1.1em;
-  padding: .45em .15em;       /* 上下留白，左右給一點呼吸空間 */
-  font-size: var(--ev-base);  /* 底下所有 em 的基準 */
-  animation: evIn .7s var(--ev-ease) both;
+  column-gap: 1em;
+  padding: .5em .2em;
+  font-size: var(--ev-base);
+  animation: gevIn .7s var(--ev-ease) both;
 }
+.msg.gev.noval .gev-card { grid-template-columns: minmax(0, 1fr); }
+.msg.gev.noval .gev-side { display: none; }
 
-/* ── 左欄 ── */
-.ev-main { display: flex; flex-direction: column; gap: .4em; min-width: 0; }
+.gev-main { display: flex; flex-direction: column; gap: .42em; min-width: 0; }
 
-.ev-name {
-  padding-left: var(--ev-indent);
-  font-size: var(--ev-name-size); font-weight: 700;
-  letter-spacing: 1.5px; color: var(--c);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  animation: nameIn .7s var(--ev-ease) .1s both;
+/* 名字：小字、字距開，兩側各一顆小星芒 */
+.gev-name {
+  display: flex; align-items: center; gap: .45em; min-width: 0;
+  padding-left: .5em;
+  font-size: .78em; font-weight: 700; letter-spacing: 2px; color: var(--c);
+  animation: gevNameIn .7s var(--ev-ease) .1s both;
 }
+.gev-nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.gev-nsp { position: relative; flex: none; width: .7em; height: .7em; animation: sparkIn .6s var(--ev-ease) .5s both; }
+.gev-nsp.r { animation-delay: .6s; }
+.gev-nsp svg { position: absolute; inset: 0; width: 100%; height: 100%; fill: var(--c); animation: sparkTwinkle 2.4s ease-in-out infinite; }
+.gev-nsp.r svg { animation-delay: -1.2s; }
 
-.ev-rule { position: relative; height: var(--line-h, 2px); }
-.ev-rule .line {
-  width: 100%; height: 100%;
-  transform-origin: 0 50%;               /* 從左往右畫出，留言卡是從中間 */
-  background: linear-gradient(90deg, var(--c) 0%, var(--c) 70%, transparent 100%);
+/* 線：從左往右畫出，兩端各一顆星芒 */
+.gev-rule { position: relative; height: var(--line-h, 2px); margin: 0 .35em; }
+.gev-line {
+  width: 100%; height: 100%; transform-origin: 0 50%;
+  background: linear-gradient(90deg, var(--c) 0%, var(--c) 82%, transparent 100%);
   animation: lineExpand .8s var(--ev-ease) .2s both;
 }
-.ev-spark {
-  position: absolute; left: -.34em; top: -.34em; width: .78em; height: .78em;
-  animation: sparkIn .6s var(--ev-ease) .3s both;
-}
-.ev-spark svg {
-  position: absolute; inset: 0; width: 100%; height: 100%; fill: var(--c);
-  animation: sparkTwinkle 2.4s ease-in-out -.6s infinite;
-}
+.gev-spark { position: absolute; top: 50%; width: .8em; height: .8em; margin-top: -.4em; animation: sparkIn .6s var(--ev-ease) .3s both; }
+.gev-spark.l { left: -.4em; }
+.gev-spark.r { right: -.1em; width: .55em; height: .55em; margin-top: -.275em; animation-delay: .75s; }
+.gev-spark svg { position: absolute; inset: 0; width: 100%; height: 100%; fill: var(--c); animation: sparkTwinkle 2.4s ease-in-out -.6s infinite; }
+.gev-spark.r svg { animation-delay: -1.8s; }
 
-.ev-act {
-  display: flex; align-items: center; gap: .45em;
-  padding-left: var(--ev-indent);
-  font-size: var(--ev-act-size); font-weight: 500;
-  letter-spacing: 1.5px; white-space: nowrap;
-  color: #FFFFFF;                          /* 永遠純白，hot 也不變 */
-  animation: textIn .6s var(--ev-ease) .38s both;
+/* 動作文字：大字，主角 */
+.gev-act {
+  padding-left: .5em;
+  font-size: 1.12em; font-weight: 700; letter-spacing: 2px; line-height: 1.35;
+  color: var(--g-ink, #FFFFFF);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  animation: gevActIn .65s var(--ev-ease) .42s both;
 }
-.ev-act b { font-weight: 700; }
-.ev-act b.plus { font-weight: 900; }
-.ev-act .mark { height: .82em; width: calc(.82em * .64); background: #FFFFFF; }
+.gev-act span { font-weight: 500; }
+.gev-act b { font-weight: 900; }
 
-/* ── 右欄 ──
-   gap 要留得比 .ring 擴散出來的範圍寬，否則數值會壓在圈上 */
-/* gap 要扣掉 .ring 本身往外多出的 inset，再留出它展開的量，
-   否則數值會壓在圈上（gap .9em 時實際只剩 10px，圈展開要 12px） */
-.ev-side { display: flex; align-items: center; gap: 1.25em; padding-right: .1em; min-width: 0; }
-
-/* 送禮：✦ 旋轉爆開 ＋ 數值滑入 */
-.ev-star { position: relative; display: block; width: var(--ev-star-size); height: var(--ev-star-size); }
-.ev-star .ring { inset: -.42em; animation-delay: .55s; }
-.ev-star .burst { position: absolute; inset: 0; animation: starBurst .75s var(--ev-ease) .45s both; }
-.ev-star .burst svg {
-  position: absolute; inset: 0; width: 100%; height: 100%; fill: var(--c);
-  animation: starPulse 2.4s ease-in-out 1.3s infinite;
-}
-.ev-val {
-  font-size: var(--ev-val-size); font-weight: 700;
-  letter-spacing: 1.5px; color: var(--c);
+/* 右欄：星芒＋大數字 */
+.gev-side { display: flex; align-items: center; gap: .3em; padding-right: .15em; min-width: 0; }
+.gev-plus { position: relative; flex: none; width: .9em; height: .9em; animation: starBurst .75s var(--ev-ease) .55s both; }
+.gev-plus svg { position: absolute; inset: 0; width: 100%; height: 100%; fill: var(--c); animation: starPulse 2.4s ease-in-out 1.4s infinite; }
+.gev-val {
+  font-size: 1.5em; font-weight: 700; letter-spacing: 1px; color: var(--c);
   font-variant-numeric: tabular-nums; white-space: nowrap;
-  /* 字級調很大而欄位很窄時，寧可收在欄位內，也不要整串溢出去被切成半個字 */
   min-width: 0; overflow: hidden; text-overflow: ellipsis;
-  animation: valIn .6s var(--ev-ease) .6s both;
+  animation: valIn .6s var(--ev-ease) .62s both;
 }
-.msg.ev.hot .ev-val { font-size: var(--ev-val-size-hot); }
+.msg.gev.hot .gev-val { font-size: 1.75em; }
 
-/* 追隨：大十字架落下回彈 ＋ 小閃 */
-.ev-cross {
-  position: relative; display: flex; align-items: center; justify-content: center;
-  width: 2.15em; height: 2.15em;
-}
-.ev-cross .ring { inset: -.2em; animation-delay: .7s; }
-.ev-cross .drop { display: flex; animation: crossIn .7s var(--ev-ease) .45s both; }
-.ev-cross .drop .mark { height: var(--ev-cross-size); width: calc(var(--ev-cross-size) * .64); background: #FFFFFF; }
-.ev-cross .tw {
-  position: absolute; right: -.3em; top: -.2em; width: .5em; height: .5em; fill: #FFFFFF;
-  animation: sparkTwinkle 2.4s ease-in-out 1.2s infinite;
-}
+#column .msg.gev.out .gev-card { animation: colOut .4s ease-in both; }
 
-/* 一次性擴散圈（實線，非光暈） */
-.ring {
-  position: absolute; border-radius: 50%;
-  border: 2px solid var(--c);
-  animation: ray .9s ease-out both;
-}
+@keyframes gevIn     { 0% { opacity: 0; transform: translateX(22px); } 100% { opacity: 1; transform: translateX(0); } }
+@keyframes gevNameIn { 0% { opacity: 0; letter-spacing: 8px; } 100% { opacity: 1; letter-spacing: 2px; } }
+@keyframes gevActIn  { 0% { opacity: 0; transform: translateY(.45em); } 100% { opacity: 1; transform: translateY(0); } }
 
-/* 退場沿用直列模式 */
-#column .msg.ev.out .ev-card { animation: colOut .4s ease-in both; }
-
-/* ══ 動畫（lineExpand / textIn / sparkIn / sparkTwinkle / colOut 與留言卡共用）══ */
-@keyframes evIn      { 0% { opacity: 0; transform: translateX(-22px); } 100% { opacity: 1; transform: translateX(0); } }
-@keyframes nameIn    { 0% { opacity: 0; transform: translateX(-10px); letter-spacing: 6px; } 100% { opacity: 1; transform: translateX(0); letter-spacing: 1.5px; } }
 @keyframes starBurst { 0% { opacity: 0; transform: scale(.1) rotate(-135deg); } 60% { opacity: 1; transform: scale(1.35) rotate(10deg); } 100% { opacity: 1; transform: scale(1) rotate(0); } }
 @keyframes starPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(.82); } }
 @keyframes valIn     { 0% { opacity: 0; transform: translateX(12px); } 100% { opacity: 1; transform: translateX(0); } }
-@keyframes crossIn   { 0% { opacity: 0; transform: translateY(-16px) scaleY(1.6); } 70% { opacity: 1; transform: translateY(2px) scaleY(.92); } 100% { opacity: 1; transform: translateY(0) scaleY(1); } }
-/* 擴散上限從 1.9 收到 1.5：原本展開後會蓋到右側數值、追隨卡還會被欄位邊界切掉 */
-@keyframes ray       { 0% { opacity: 0; transform: scale(.3); } 40% { opacity: 1; } 100% { opacity: 0; transform: scale(1.5); } }
